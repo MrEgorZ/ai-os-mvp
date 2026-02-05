@@ -67,7 +67,7 @@ export default async function StepPage({ params }: { params: { id: string; stepI
 
       {missing.length ? (
         <div style={{ border: "1px solid #f2c7c7", background: "#fff5f5", padding: 12, borderRadius: 12, marginTop: 12 }}>
-          <b>Не хватает данных для корректного промпта:</b> {missing.map(labelKey).join(", ")}.{" "}
+          <b>Не хватает данных для корректного промпта:</b> {missing.join(", ")}.{" "}
           <Link href={`/projects/${params.id}/data`}>Заполни данные →</Link>
         </div>
       ) : null}
