@@ -1,0 +1,7 @@
+diff --git a/app/projects/[id]/steps/[stepId]/page.tsx b/app/projects/[id]/steps/[stepId]/page.tsx
+index 0000000..0000000 100644
+--- a/app/projects/[id]/steps/[stepId]/page.tsx
++++ b/app/projects/[id]/steps/[stepId]/page.tsx
+@@ -67,7 +67,7 @@
+-            <b>Не хватает данных для корректного промпта:</b> {missing.map(labelKey).join(", ")}.{" "}
++            <b>Не хватает данных для корректного промпта:</b> {missing.join(", ")}.{" "}
