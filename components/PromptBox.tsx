@@ -1,44 +1,40 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import CopyButton from "@/components/CopyButton";
+import { useState } from 'react';
 
-type Props = {
-  title: string;
-  prompt: string;
+type PromptBoxProps = {
+  blockKey: string;
 };
 
-export default function PromptBox({ title, prompt }: Props) {
-  const [open, setOpen] = useState(false);
+export default function PromptBox({ blockKey }: PromptBoxProps) {
+  const [value, setValue] = useState('');
 
   return (
-    <div className="border rounded-lg p-4 bg-white">
-      <div className="flex items-center justify-between gap-3">
-        <div className="font-medium">{title}</div>
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className="text-sm underline"
-        >
-          {open ? "Скрыть промпт" : "Показать промпт"}
-        </button>
-      </div>
-
-      {open && (
-        <div className="mt-3">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <div className="text-xs text-gray-500">
-              Нажми «Скопировать» и вставь в ChatGPT/Claude/Gemini.
-            </div>
-            <CopyButton text={prompt} />
-          </div>
-          <textarea
-            readOnly
-            className="w-full h-48 border rounded p-3 text-sm font-mono"
-            value={prompt}
-          />
-        </div>
-      )}
+    <div style={{ display: 'flex', gap: 8 }}>
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={`Введите данные для блока ${blockKey}`}
+        style={{
+          flex: 1,
+          padding: 8,
+          border: '1px solid #ccc',
+          borderRadius: 4,
+        }}
+      />
+      <button
+        onClick={() => {
+          console.log('block:', blockKey, 'value:', value);
+        }}
+        style={{
+          padding: '8px 12px',
+          borderRadius: 4,
+          border: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        OK
+      </button>
     </div>
   );
 }
