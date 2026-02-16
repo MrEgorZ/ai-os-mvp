@@ -1,14 +1,14 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/requireUser";
 import { AI_SERVICES } from "@/lib/services.config";
 import { SCENARIO_LAUNCHERS } from "@/lib/scenarios.config";
 import { Card, H2 } from "@/components/ui";
 import CopyButton from "@/components/CopyButton";
 
+export const dynamic = "force-dynamic";
+
 export default async function Dashboard() {
-  const sb = supabaseServer();
-  const { data: auth } = await sb.auth.getUser();
-  const user = auth.user!;
+  const { sb, user } = await requireUser();
 
   const { data: projects } = await sb
     .from("projects")

@@ -1,33 +1,44 @@
-import { supabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import type { ScenarioType } from "@/types";
+import { requireUser } from "@/lib/auth/requireUser";
+import { DATA_KEYS, isDataKey } from "@/lib/constants/dataKeys";
+
+export const dynamic = "force-dynamic";
 
 function normalizeType(t: string): ScenarioType {
-  const allowed = new Set(["site","bot","ads","strategy","market","product","software"]);
+  const allowed = new Set(["site", "bot", "ads", "strategy", "market", "product", "software"]);
   if (allowed.has(t)) return t as ScenarioType;
   return "site";
 }
 
-export default async function NewProjectPage({ searchParams }: { searchParams: { type?: string; mode?: string } }) {
+export default async function NewProjectPage({ searchParams }: { searchParams: { type?: string; mode?: string; err?: string } }) {
+  await requireUser();
+
   const type = normalizeType(searchParams.type ?? "site");
   const mode = (searchParams.mode ?? "A") === "B" ? "B" : "A";
 
   async function createProject(formData: FormData) {
     "use server";
+    const type = normalizeType(String(formData.get("type") || "site"));
+    const mode = String(formData.get("mode") || "A") === "B" ? "B" : "A";
     const name = String(formData.get("name") || "").trim();
-    if (!name) return;
 
-    const sb = supabaseServer();
-    const { data: auth } = await sb.auth.getUser();
-    if (!auth.user) redirect("/login");
+    if (!name) {
+      redirect(`/projects/new?type=${type}&mode=${mode}&err=${encodeURIComponent("Название проекта обязательно")}`);
+    }
+
+    const { sb, user } = await requireUser();
 
     const { data: project, error: pErr } = await sb
       .from("projects")
-      .insert({ user_id: auth.user.id, type, mode, name })
-      .select()
+      .insert({ user_id: user.id, type, mode, name })
+      .select("id")
       .single();
 
-    if (pErr || !project) throw new Error(pErr?.message || "Не удалось создать проект");
+    if (pErr || !project) {
+      redirect(`/projects/new?type=${type}&mode=${mode}&err=${encodeURIComponent("Не удалось создать проект")}`);
+    }
 
     const scenarioKey = `${type}.${mode}`;
     const { data: scen, error: sErr } = await sb
@@ -37,34 +48,52 @@ export default async function NewProjectPage({ searchParams }: { searchParams: {
       .single();
 
     if (sErr || !scen) {
-      redirect(`/projects/${project.id}?warn=${encodeURIComponent("Сценарий не найден. Выполни sql/002_seed_scenarios.sql в Supabase.")}`);
+      await sb.from("projects").delete().eq("id", project.id).eq("user_id", user.id);
+      redirect(`/projects/new?type=${type}&mode=${mode}&err=${encodeURIComponent("Сценарий не найден. Выполни sql/002_seed_scenarios.sql")}`);
     }
 
     const def = scen.definition_json as any;
-    const baseKeys: string[] = def.required_data_keys ?? [];
+    const baseKeys: string[] = Array.isArray(def.required_data_keys)
+      ? def.required_data_keys.filter((k: string) => isDataKey(k))
+      : [];
 
     if (baseKeys.length) {
-      await sb.from("project_data").insert(
-        baseKeys.map((k) => ({ project_id: project.id, key: k, status: "missing" }))
-      );
+      const { error } = await sb
+        .from("project_data")
+        .insert(baseKeys.map((k) => ({ project_id: project.id, key: k, status: "missing" })));
+      if (error) {
+        await sb.from("projects").delete().eq("id", project.id).eq("user_id", user.id);
+        redirect(`/projects/new?type=${type}&mode=${mode}&err=${encodeURIComponent("Не удалось создать базовые данные проекта")}`);
+      }
     }
 
     const steps = (def.steps ?? []).map((st: any) => ({
       project_id: project.id,
-      scenario_key: st.scenario_key,
-      title: st.title_ru,
-      description: st.description_ru ?? "",
-      acceptance: st.acceptance_ru ?? "",
-      required_fields: st.required_fields ?? [],
+      scenario_key: String(st.scenario_key ?? `${scenarioKey}.${st.order ?? 0}`),
+      title: String(st.title_ru ?? "Шаг"),
+      description: st.description_ru ? String(st.description_ru) : "",
+      acceptance: st.acceptance_ru ? String(st.acceptance_ru) : "",
+      required_fields: Array.isArray(st.required_fields)
+        ? st.required_fields.filter((k: string) => isDataKey(k))
+        : [],
       ai_tool_default: st.ai_tool_default ?? "gpt",
-      prompt_template: st.prompt_template_ru,
+      prompt_template: String(st.prompt_template_ru ?? ""),
       status: "todo",
-      order_index: st.order ?? 0,
+      order_index: Number(st.order ?? 0),
     }));
 
-    if (steps.length) await sb.from("steps").insert(steps);
+    if (steps.length) {
+      const { error } = await sb.from("steps").insert(steps);
+      if (error) {
+        await sb.from("projects").delete().eq("id", project.id).eq("user_id", user.id);
+        redirect(`/projects/new?type=${type}&mode=${mode}&err=${encodeURIComponent("Не удалось создать шаги проекта")}`);
+      }
+    }
 
-    redirect(`/projects/${project.id}`);
+    revalidatePath("/");
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${project.id}`);
+    redirect(`/projects/${project.id}?msg=${encodeURIComponent("Проект успешно создан")}`);
   }
 
   return (
@@ -74,11 +103,21 @@ export default async function NewProjectPage({ searchParams }: { searchParams: {
         Тип: <b>{type}</b> · Режим: <b>{mode}</b>
       </p>
 
+      {searchParams.err ? (
+        <div style={{ border: "1px solid #f2c7c7", background: "#fff5f5", padding: 12, borderRadius: 12, marginTop: 12 }}>
+          {searchParams.err}
+        </div>
+      ) : null}
+
       <form action={createProject} style={{ marginTop: 16, display: "grid", gap: 10 }}>
+        <input type="hidden" name="type" value={type} />
+        <input type="hidden" name="mode" value={mode} />
+
         <label style={{ display: "grid", gap: 6 }}>
           <span>Название проекта</span>
           <input
             name="name"
+            maxLength={120}
             placeholder="Например: Лендинг для франшизы X"
             required
             style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }}

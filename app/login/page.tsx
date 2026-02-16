@@ -1,8 +1,11 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { sanitizeNextPath } from "@/lib/auth/navigation";
+
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: { searchParams: { next?: string; err?: string; msg?: string } }) {
-  const next = searchParams.next || "/";
+  const next = sanitizeNextPath(searchParams.next);
 
   const sb = supabaseServer();
   const { data } = await sb.auth.getUser();
@@ -10,8 +13,14 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
 
   async function signIn(formData: FormData) {
     "use server";
+    const next = sanitizeNextPath(String(formData.get("next") || "/"));
     const email = String(formData.get("email") || "").trim();
     const password = String(formData.get("password") || "").trim();
+
+    if (!email || !password) {
+      redirect(`/login?next=${encodeURIComponent(next)}&err=${encodeURIComponent("Email и пароль обязательны")}`);
+    }
+
     const sb = supabaseServer();
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) redirect(`/login?next=${encodeURIComponent(next)}&err=${encodeURIComponent(error.message)}`);
@@ -20,8 +29,14 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
 
   async function signUp(formData: FormData) {
     "use server";
+    const next = sanitizeNextPath(String(formData.get("next") || "/"));
     const email = String(formData.get("email") || "").trim();
     const password = String(formData.get("password") || "").trim();
+
+    if (!email || !password) {
+      redirect(`/login?next=${encodeURIComponent(next)}&err=${encodeURIComponent("Email и пароль обязательны")}`);
+    }
+
     const sb = supabaseServer();
     const { error } = await sb.auth.signUp({ email, password });
     if (error) redirect(`/login?next=${encodeURIComponent(next)}&err=${encodeURIComponent(error.message)}`);
@@ -50,6 +65,7 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 18, marginTop: 18 }}>
         <form action={signIn} style={{ border: "1px solid #e5e5e5", borderRadius: 12, padding: 14, display: "grid", gap: 10 }}>
+          <input type="hidden" name="next" value={next} />
           <b>Войти</b>
           <label style={{ display: "grid", gap: 6 }}>
             Email
@@ -57,7 +73,7 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
           </label>
           <label style={{ display: "grid", gap: 6 }}>
             Пароль
-            <input name="password" type="password" required style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+            <input name="password" type="password" required minLength={8} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
           </label>
           <button type="submit" style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #ddd", background: "white", cursor: "pointer" }}>
             Войти
@@ -65,6 +81,7 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
         </form>
 
         <form action={signUp} style={{ border: "1px solid #e5e5e5", borderRadius: 12, padding: 14, display: "grid", gap: 10 }}>
+          <input type="hidden" name="next" value={next} />
           <b>Создать аккаунт</b>
           <label style={{ display: "grid", gap: 6 }}>
             Email
@@ -72,7 +89,7 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
           </label>
           <label style={{ display: "grid", gap: 6 }}>
             Пароль
-            <input name="password" type="password" required style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
+            <input name="password" type="password" required minLength={8} style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd" }} />
           </label>
           <div style={{ fontSize: 13, color: "#555" }}>
             Для MVP — простой email+пароль. Подтверждение email настраивается в Supabase.
