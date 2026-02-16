@@ -1,3 +1,7 @@
+import type { DataKey } from "@/lib/constants/dataKeys";
+import type { DataStatus } from "@/lib/constants/dataStatus";
+import type { StepStatus } from "@/lib/constants/stepStatus";
+
 export type AiToolKey = "gpt" | "claude" | "gemini" | "perplexity" | "wavespeed";
 
 export type ScenarioType =
@@ -10,8 +14,6 @@ export type ScenarioType =
   | "software";
 
 export type ProjectStatus = "in_progress" | "paused" | "done";
-export type StepStatus = "todo" | "doing" | "review" | "done";
-export type DataStatus = "ok" | "warn" | "missing";
 
 export type Project = {
   id: string;
@@ -27,9 +29,9 @@ export type Project = {
 export type ProjectDataRow = {
   id: string;
   project_id: string;
-  key: string;
+  key: DataKey;
   status: DataStatus;
-  value_json: any | null;
+  value_json: unknown | null;
   value_text: string | null;
   updated_at: string;
 };

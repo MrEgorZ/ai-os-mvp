@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase/server";
 import { Card, H2 } from "@/components/ui";
+import { requireOwnedProject } from "@/lib/auth/ownership";
+import { DATA_KEYS } from "@/lib/constants/dataKeys";
+
+export const dynamic = "force-dynamic";
 
 const COLS: { key: string; title: string }[] = [
   { key: "todo", title: "Сделать" },
@@ -9,18 +12,8 @@ const COLS: { key: string; title: string }[] = [
   { key: "done", title: "Готово" },
 ];
 
-export default async function ProjectPage({ params, searchParams }: { params: { id: string }; searchParams: { warn?: string } }) {
-  const sb = supabaseServer();
-
-  const { data: project } = await sb.from("projects").select("*").eq("id", params.id).single();
-  if (!project) {
-    return (
-      <main style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
-        <h1>Проект не найден</h1>
-        <Link href="/projects">← К проектам</Link>
-      </main>
-    );
-  }
+export default async function ProjectPage({ params, searchParams }: { params: { id: string }; searchParams: { warn?: string; msg?: string; err?: string } }) {
+  const { project, sb } = await requireOwnedProject(params.id);
 
   const { data: steps } = await sb.from("steps").select("*").eq("project_id", params.id).order("order_index", { ascending: true });
   const { data: pdata } = await sb.from("project_data").select("*").eq("project_id", params.id);
@@ -51,10 +44,22 @@ export default async function ProjectPage({ params, searchParams }: { params: { 
         </div>
       ) : null}
 
+      {searchParams.msg ? (
+        <div style={{ border: "1px solid #c7e7c7", background: "#f6fff6", padding: 12, borderRadius: 12, marginTop: 12 }}>
+          {searchParams.msg}
+        </div>
+      ) : null}
+
+      {searchParams.err ? (
+        <div style={{ border: "1px solid #f2c7c7", background: "#fff5f5", padding: 12, borderRadius: 12, marginTop: 12 }}>
+          {searchParams.err}
+        </div>
+      ) : null}
+
       <H2>Данные проекта (статусы)</H2>
       <Card>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
-          {["project_profile","audience","offer","competitors","references","tracking"].map((k) => (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+          {DATA_KEYS.map((k) => (
             <div key={k} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
               <div style={{ fontWeight: 800 }}>{labelKey(k)}</div>
               <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>

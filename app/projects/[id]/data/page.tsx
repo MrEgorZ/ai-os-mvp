@@ -1,10 +1,14 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { Card, H2 } from "@/components/ui";
 import { AI_SERVICES } from "@/lib/services.config";
 import PromptBox from "@/components/PromptBox";
+import { requireOwnedProject, assertOwnedProjectForAction } from "@/lib/auth/ownership";
+import { DATA_KEYS, type DataKey } from "@/lib/constants/dataKeys";
+import { validateProjectDataInput, MAX_VALUE_JSON_INPUT_LENGTH, MAX_VALUE_TEXT_LENGTH } from "@/lib/validation/projectData";
 
-type DataKey = "project_profile" | "audience" | "offer" | "competitors" | "references" | "tracking";
+export const dynamic = "force-dynamic";
 
 const BLOCKS: { key: DataKey; title: string; help: string; defaultTool: string }[] = [
   { key: "project_profile", title: "Профиль проекта", help: "Что продаём, кому, цель, метрики, ограничения, интеграции.", defaultTool: "gpt" },
@@ -15,16 +19,8 @@ const BLOCKS: { key: DataKey; title: string; help: string; defaultTool: string }
   { key: "tracking", title: "Аналитика/UTM", help: "UTM и события view/click/submit. Важно для рекламы и конверсии.", defaultTool: "gpt" },
 ];
 
-export default async function ProjectDataPage({ params }: { params: { id: string } }) {
-  const sb = supabaseServer();
-  const { data: project } = await sb.from("projects").select("*").eq("id", params.id).single();
-  if (!project) {
-    return (
-      <main style={{ padding: 24 }}>
-        <h1>Проект не найден</h1>
-      </main>
-    );
-  }
+export default async function ProjectDataPage({ params, searchParams }: { params: { id: string }; searchParams: { msg?: string; err?: string } }) {
+  const { project, sb } = await requireOwnedProject(params.id);
 
   const { data: pdata } = await sb.from("project_data").select("*").eq("project_id", params.id);
   const map: Record<string, any> = {};
@@ -32,24 +28,38 @@ export default async function ProjectDataPage({ params }: { params: { id: string
 
   async function upsert(formData: FormData) {
     "use server";
-    const key = String(formData.get("key") || "") as DataKey;
-    const status = String(formData.get("status") || "missing");
-    const value_text = String(formData.get("value_text") || "");
-    const value_json_raw = String(formData.get("value_json") || "");
 
-    let value_json: any = null;
-    if (value_json_raw.trim()) {
-      try { value_json = JSON.parse(value_json_raw); } catch { value_json = { raw: value_json_raw }; }
+    const ownership = await assertOwnedProjectForAction(params.id);
+    if (!ownership.ok) {
+      if (ownership.reason === "unauthorized") redirect("/login");
+      redirect(`/projects/${params.id}/data?err=${encodeURIComponent("Проект недоступен")}`);
     }
 
-    const sb = supabaseServer();
-    await sb.from("project_data").upsert({
-      project_id: params.id,
-      key,
-      status,
-      value_text: value_text || null,
-      value_json,
-    }, { onConflict: "project_id,key" });
+    const parsed = validateProjectDataInput(formData);
+    if (!parsed.ok) {
+      redirect(`/projects/${params.id}/data?err=${encodeURIComponent(parsed.message)}`);
+    }
+
+    const { error } = await ownership.sb.from("project_data").upsert(
+      {
+        project_id: params.id,
+        key: parsed.key,
+        status: parsed.status,
+        value_text: parsed.valueText,
+        value_json: parsed.valueJson,
+      },
+      { onConflict: "project_id,key" }
+    );
+
+    if (error) {
+      redirect(`/projects/${params.id}/data?err=${encodeURIComponent("Не удалось сохранить блок данных")}`);
+    }
+
+    revalidatePath(`/projects/${params.id}/data`);
+    revalidatePath(`/projects/${params.id}`);
+    revalidatePath("/");
+    revalidatePath("/projects");
+    redirect(`/projects/${params.id}/data?msg=${encodeURIComponent("Блок данных сохранён")}`);
   }
 
   return (
@@ -65,7 +75,21 @@ export default async function ProjectDataPage({ params }: { params: { id: string
         </div>
       </header>
 
+      {searchParams.msg ? (
+        <div style={{ border: "1px solid #c7e7c7", background: "#f6fff6", padding: 12, borderRadius: 12, marginTop: 12 }}>
+          {searchParams.msg}
+        </div>
+      ) : null}
+      {searchParams.err ? (
+        <div style={{ border: "1px solid #f2c7c7", background: "#fff5f5", padding: 12, borderRadius: 12, marginTop: 12 }}>
+          {searchParams.err}
+        </div>
+      ) : null}
+
       <H2>Заполняй блоки — шаги будут генерировать промпты с автоподстановкой</H2>
+      <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
+        Ограничения: текст до {MAX_VALUE_TEXT_LENGTH} символов, JSON до {MAX_VALUE_JSON_INPUT_LENGTH} символов. Ключи: {DATA_KEYS.join(", ")}.
+      </div>
       <div style={{ display: "grid", gap: 12 }}>
         {BLOCKS.map((b) => (
           <Card key={b.key}>
@@ -92,8 +116,8 @@ export default async function ProjectDataPage({ params }: { params: { id: string
                     <option value="warn">⚠️ Частично</option>
                     <option value="ok">✅ Готово</option>
                   </select>
-                  <textarea name="value_text" defaultValue={map[b.key]?.value_text ?? ""} placeholder="Вставь сюда текст/заметки" style={{ padding: 10, borderRadius: 10, border: '1px solid #ddd', minHeight: 120 }} />
-                  <textarea name="value_json" defaultValue={map[b.key]?.value_json ? JSON.stringify(map[b.key]?.value_json, null, 2) : ""} placeholder="JSON (необязательно). Если не знаешь — оставь пустым." style={{ padding: 10, borderRadius: 10, border: '1px solid #ddd', minHeight: 120 }} />
+                  <textarea name="value_text" maxLength={MAX_VALUE_TEXT_LENGTH} defaultValue={map[b.key]?.value_text ?? ""} placeholder="Вставь сюда текст/заметки" style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", minHeight: 120 }} />
+                  <textarea name="value_json" maxLength={MAX_VALUE_JSON_INPUT_LENGTH} defaultValue={map[b.key]?.value_json ? JSON.stringify(map[b.key]?.value_json, null, 2) : ""} placeholder="JSON (необязательно). Если не знаешь — оставь пустым." style={{ padding: 10, borderRadius: 10, border: "1px solid #ddd", minHeight: 120 }} />
                   <button type="submit" style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #ddd", background: "white", cursor: "pointer" }}>
                     Сохранить
                   </button>
@@ -116,4 +140,3 @@ function toolUrl(key: string) {
   const svc = AI_SERVICES.find((x) => x.key === key);
   return svc?.url ?? "https://chat.openai.com";
 }
-

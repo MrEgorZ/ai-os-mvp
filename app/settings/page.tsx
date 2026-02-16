@@ -1,8 +1,13 @@
 import Link from "next/link";
+import { requireUser } from "@/lib/auth/requireUser";
 import { AI_SERVICES } from "@/lib/services.config";
 import { Card, H2 } from "@/components/ui";
 
+export const dynamic = "force-dynamic";
+
 export default async function SettingsPage() {
+  await requireUser();
+
   return (
     <main style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>

@@ -34,6 +34,7 @@ npm i
 Запусти по очереди:
 1) `sql/001_init.sql`
 2) `sql/002_seed_scenarios.sql`
+3) `sql/003_security_hardening.sql`
 
 ### Запуск
 ```bash

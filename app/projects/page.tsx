@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/requireUser";
 import { Card, H2 } from "@/components/ui";
 
+export const dynamic = "force-dynamic";
+
 export default async function ProjectsPage() {
-  const sb = supabaseServer();
-  const { data: auth } = await sb.auth.getUser();
-  const user = auth.user!;
+  const { sb, user } = await requireUser();
 
   const { data: projects } = await sb
     .from("projects")
